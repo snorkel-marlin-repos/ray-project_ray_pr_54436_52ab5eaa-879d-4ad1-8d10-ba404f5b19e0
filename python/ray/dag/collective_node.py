@@ -22,7 +22,7 @@ from ray.util.annotations import DeveloperAPI
 
 class _CollectiveOperation:
     """
-    Represent metadata for a collective communicator collective operation.
+    Represent metadata for a NCCL collective operation.
 
     Args:
         input_nodes: A list of input nodes to the collective operation.
@@ -32,7 +32,7 @@ class _CollectiveOperation:
     Requirements:
     1. Input nodes are unique.
     2. Actor handles are unique.
-    3. Actor handles match the custom communicator group if specified.
+    3. Actor handles match the custom NCCL group if specified.
     """
 
     def __init__(
@@ -66,12 +66,12 @@ class _CollectiveOperation:
 
         self._op = op
         if transport is None:
-            transport = TorchTensorType.ACCELERATOR
+            transport = TorchTensorType.NCCL
         self._type_hint = TorchTensorType(transport=transport, _direct_return=True)
         if isinstance(transport, Communicator):
             if set(transport.get_actor_handles()) != set(self._actor_handles):
                 raise ValueError(
-                    "Expected actor handles to match the custom communicator group"
+                    "Expected actor handles to match the custom NCCL group"
                 )
 
     def __str__(self) -> str:
@@ -97,7 +97,7 @@ class _CollectiveOperation:
         elif self._type_hint.get_custom_communicator() is not None:
             communicator = self._type_hint.get_custom_communicator()
         else:
-            raise ValueError("Expected a communicator group")
+            raise ValueError("Expected a NCCL group")
         return communicator
 
     def execute(self, send_buf: "torch.Tensor") -> "torch.Tensor":
@@ -142,7 +142,7 @@ class _CollectiveOperation:
 
 @DeveloperAPI
 class CollectiveOutputNode(ClassMethodNode):
-    """Represent an output node from a communicator collective operation in a Ray DAG."""
+    """Represent an output node from a NCCL collective operation in a Ray DAG."""
 
     def __init__(
         self,

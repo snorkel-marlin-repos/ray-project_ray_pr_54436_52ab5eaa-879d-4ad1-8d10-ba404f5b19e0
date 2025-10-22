@@ -45,8 +45,7 @@ class ActorSchedulingQueue : public SchedulingQueue {
       instrumented_io_context &task_execution_service,
       DependencyWaiter &waiter,
       worker::TaskEventBuffer &task_event_buffer,
-      std::shared_ptr<ConcurrencyGroupManager<BoundedExecutor>> pool_manager,
-      int64_t reorder_wait_seconds);
+      std::shared_ptr<ConcurrencyGroupManager<BoundedExecutor>> pool_manager);
 
   void Stop() override;
 
@@ -82,7 +81,8 @@ class ActorSchedulingQueue : public SchedulingQueue {
   /// Called when we time out waiting for an earlier task to show up.
   void OnSequencingWaitTimeout();
   /// Max time in seconds to wait for dependencies to show up.
-  const int64_t reorder_wait_seconds_;
+  const int64_t reorder_wait_seconds_ =
+      ::RayConfig::instance().actor_scheduling_queue_max_reorder_wait_seconds();
   /// Sorted map of (accept, rej) task callbacks keyed by their sequence number.
   std::map<int64_t, InboundRequest> pending_actor_tasks_;
   /// The next sequence number we are waiting for to arrive.

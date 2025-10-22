@@ -99,6 +99,7 @@ while [ "$RETRY_NUM" -lt "$MAX_RETRIES" ]; do
   if [[ "$1" == *".kuberay"* ]]; then
     export GOOGLE_CLOUD_PROJECT=dhyey-dev
     export AWS_REGION="us-west-2"
+    ./gcloud_docker_login.sh aws2kuberay_gke.json
   fi
 
   trap _term SIGINT SIGTERM

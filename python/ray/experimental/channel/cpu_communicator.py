@@ -91,7 +91,7 @@ class CPUCommBarrier:
 
 class CPUCommunicator(Communicator):
     """
-    Uses a CPU-based communicator actor instead of an accelerator group like NCCL.
+    Uses a CPU-based communicator actor instead of a NCCL group.
     """
 
     def __init__(self, world_size: int, actor_handles: List["ray.actor.ActorHandle"]):

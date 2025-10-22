@@ -19,9 +19,7 @@ from ray.experimental.channel.shared_memory_channel import (
     Channel,
     CompositeChannel,
 )
-from ray.experimental.channel.torch_tensor_accelerator_channel import (
-    TorchTensorAcceleratorChannel,
-)
+from ray.experimental.channel.torch_tensor_nccl_channel import TorchTensorNcclChannel
 
 __all__ = [
     "AwaitableBackgroundReader",
@@ -35,7 +33,7 @@ __all__ = [
     "SynchronousWriter",
     "WriterInterface",
     "ChannelContext",
-    "TorchTensorAcceleratorChannel",
+    "TorchTensorNcclChannel",
     "IntraProcessChannel",
     "CompositeChannel",
     "BufferedSharedMemoryChannel",
