@@ -34,7 +34,6 @@ from ray.serve._private.test_utils import (
     check_num_replicas_gte,
     check_num_replicas_lte,
     get_num_alive_replicas,
-    tlog,
 )
 from ray.serve.config import AutoscalingConfig
 from ray.serve.handle import DeploymentHandle
@@ -856,27 +855,26 @@ def test_e2e_raise_min_replicas(serve_instance_with_signal):
     }
 
     client.deploy_apps(ServeDeploySchema(**{"applications": [app_config]}))
-    tlog("Deployed A.")
+    print("Deployed A.")
     wait_for_condition(
         check_deployment_status, name="A", expected_status=DeploymentStatus.HEALTHY
     )
     start_time = get_deployment_start_time(controller, "A")
-    tlog(f"Deployment A is healthy, {start_time=}")
 
     check_num_replicas_eq("A", 0)
 
     handle = serve.get_deployment_handle("A", "default")
     handle.remote()
-    tlog("Issued one request.")
+    print("Issued one request.")
 
-    wait_for_condition(check_num_replicas_eq, name="A", target=1, timeout=5)
-    tlog("Scaled up to 1 replica.")
+    wait_for_condition(check_num_replicas_eq, name="A", target=1, timeout=2)
+    print("Scaled up to 1 replica.")
 
     first_deployment_replicas = get_running_replica_ids("A", controller)
 
     app_config["deployments"][0]["autoscaling_config"]["min_replicas"] = 2
     client.deploy_apps(ServeDeploySchema(**{"applications": [app_config]}))
-    tlog("Redeployed A with min_replicas set to 2.")
+    print("Redeployed A with min_replicas set to 2.")
     wait_for_condition(
         check_deployment_status, name="A", expected_status=DeploymentStatus.HEALTHY
     )
@@ -884,7 +882,7 @@ def test_e2e_raise_min_replicas(serve_instance_with_signal):
     # Confirm that autoscaler doesn't scale above 2 even after waiting
     with pytest.raises(RuntimeError, match="timeout"):
         wait_for_condition(check_num_replicas_gte, name="A", target=3, timeout=5)
-    tlog("Autoscaled to 2 without issuing any new requests.")
+    print("Autoscaled to 2 without issuing any new requests.")
 
     second_deployment_replicas = get_running_replica_ids("A", controller)
 
@@ -895,12 +893,12 @@ def test_e2e_raise_min_replicas(serve_instance_with_signal):
 
     signal.send.remote()
     time.sleep(1)
-    tlog("Completed request.")
+    print("Completed request.")
 
     # As the queue is drained, we should scale back down.
     wait_for_condition(check_num_replicas_lte, name="A", target=2)
     check_num_replicas_gte("A", 2)
-    tlog("Stayed at 2 replicas.")
+    print("Stayed at 2 replicas.")
 
     # Make sure start time did not change for the deployment
     assert get_deployment_start_time(controller, "A") == start_time

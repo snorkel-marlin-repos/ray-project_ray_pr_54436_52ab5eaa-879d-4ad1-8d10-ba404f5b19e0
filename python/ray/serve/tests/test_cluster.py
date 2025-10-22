@@ -22,7 +22,6 @@ from ray.serve._private.utils import calculate_remaining_timeout, get_head_node_
 from ray.serve.context import _get_global_client
 from ray.serve.handle import DeploymentHandle
 from ray.serve.schema import ServeDeploySchema
-from ray.util.state import list_actors
 
 
 def get_pids(expected, deployment_name="D", app_name="default", timeout=30):
@@ -221,13 +220,14 @@ def test_intelligent_scale_down(ray_cluster):
     client = _get_global_client()
 
     def get_actor_distributions():
+        actors = ray._private.state.actors()
         node_to_actors = defaultdict(list)
-        for actor in list_actors(
-            address=cluster.address, filters=[("STATE", "=", "ALIVE")]
-        ):
-            if "ServeReplica" not in actor.class_name:
+        for actor in actors.values():
+            if "ServeReplica" not in actor["ActorClassName"]:
                 continue
-            node_to_actors[actor.node_id].append(actor)
+            if actor["State"] != "ALIVE":
+                continue
+            node_to_actors[actor["Address"]["NodeID"]].append(actor)
 
         return set(map(len, node_to_actors.values()))
 
@@ -446,22 +446,19 @@ class TestHealthzAndRoutes:
 
         # Ensure worker node has both replicas.
         def check_replicas_on_worker_nodes():
-            return (
-                len(
-                    {
-                        a.node_id
-                        for a in list_actors(address=cluster.address)
-                        if a.class_name.startswith("ServeReplica")
-                    }
-                )
-                == 1
-            )
+            _actors = ray._private.state.actors().values()
+            replica_nodes = [
+                a["Address"]["NodeID"]
+                for a in _actors
+                if a["ActorClassName"].startswith("ServeReplica")
+            ]
+            return len(set(replica_nodes)) == 1
 
         wait_for_condition(check_replicas_on_worker_nodes)
 
         # Ensure total actors of 2 proxies, 1 controller, and 2 replicas,
         # and 2 nodes exist.
-        wait_for_condition(lambda: len(list_actors(address=cluster.address)) == 5)
+        wait_for_condition(lambda: len(ray._private.state.actors()) == 5)
         assert len(ray.nodes()) == 2
 
         # Ensure `/-/healthz` and `/-/routes` return 200 and expected responses
@@ -493,12 +490,21 @@ class TestHealthzAndRoutes:
         # replicas on all nodes.
         serve.delete(name=SERVE_DEFAULT_APP_NAME)
 
-        wait_for_condition(
-            lambda: len(
-                list_actors(address=cluster.address, filters=[("STATE", "=", "ALIVE")])
+        def _check():
+            _actors = ray._private.state.actors().values()
+            return (
+                len(
+                    list(
+                        filter(
+                            lambda a: a["State"] == "ALIVE",
+                            _actors,
+                        )
+                    )
+                )
+                == 3
             )
-            == 3,
-        )
+
+        wait_for_condition(_check)
 
         # Ensure head node `/-/healthz` and `/-/routes` continue to
         # return 200 and expected responses. Also, the worker node

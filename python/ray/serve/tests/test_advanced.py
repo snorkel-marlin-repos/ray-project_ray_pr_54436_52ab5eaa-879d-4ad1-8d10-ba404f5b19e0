@@ -1,5 +1,4 @@
 import asyncio
-import sys
 import time
 
 import httpx
@@ -11,7 +10,6 @@ from ray import serve
 from ray._common.test_utils import SignalActor
 from ray.serve._private.constants import SERVE_DEFAULT_APP_NAME
 from ray.serve.handle import DeploymentHandle
-from ray.util.state import list_objects
 
 
 def test_serve_forceful_shutdown(serve_instance):
@@ -112,20 +110,9 @@ def test_passing_object_ref_to_deployment_not_pinned_to_memory(serve_instance):
     See: https://github.com/ray-project/ray/issues/43248
     """
 
-    def _obj_ref_exists_in_state_api(obj_ref_hex: str) -> bool:
-        return (
-            len(
-                list_objects(
-                    filters=[("object_id", "=", obj_ref_hex)],
-                    raise_on_missing_output=False,
-                )
-            )
-            > 0
-        )
-
     @serve.deployment
     class Dep1:
-        def multiply_by_two(self, length: int):
+        def multiple_by_two(self, length: int):
             return length * 2
 
     @serve.deployment
@@ -134,27 +121,31 @@ def test_passing_object_ref_to_deployment_not_pinned_to_memory(serve_instance):
             self.dep1: DeploymentHandle = dep1
 
         async def __call__(self, http_request: Request) -> str:
-            length = int(http_request.query_params.get("length"))
-            length_ref = ray.put(length)
+            _length = int(http_request.query_params.get("length"))
+            length_ref = ray.put(_length)
+            obj_ref_hex = length_ref.hex()
 
-            # Sanity check that the ObjectRef exists in the state API.
-            assert _obj_ref_exists_in_state_api(length_ref.hex())
+            # Object ref should be in the memory for downstream deployment to access.
+            assert obj_ref_hex in ray._private.internal_api.memory_summary()
             return {
-                "length": length,
-                "result": await self.dep1.multiply_by_two.remote(length_ref),
-                "length_ref_hex": length_ref.hex(),
+                "result": await self.dep1.multiple_by_two.remote(length_ref),
+                "length": _length,
+                "obj_ref_hex": obj_ref_hex,
             }
 
-    serve.run(Gateway.bind(Dep1.bind()))
+    app = Gateway.bind(Dep1.bind())
+    serve.run(target=app)
 
     length = 10
     response = httpx.get(f"http://localhost:8000?length={length}").json()
-    assert response["length"] == length
     assert response["result"] == length * 2
+    assert response["length"] == length
 
     # Ensure the object ref is not in the memory anymore.
-    assert not _obj_ref_exists_in_state_api(response["length_ref_hex"])
+    assert response["obj_ref_hex"] not in ray._private.internal_api.memory_summary()
 
 
 if __name__ == "__main__":
+    import sys
+
     sys.exit(pytest.main(["-v", "-s", __file__]))

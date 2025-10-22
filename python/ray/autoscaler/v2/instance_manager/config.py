@@ -388,7 +388,7 @@ class AutoscalingConfig:
 
     def disable_node_updaters(self) -> bool:
         provider_config = self._configs.get("provider", {})
-        return provider_config.get(DISABLE_NODE_UPDATERS_KEY, False)
+        return provider_config.get(DISABLE_NODE_UPDATERS_KEY, True)
 
     def get_idle_timeout_s(self) -> Optional[float]:
         """
@@ -435,14 +435,10 @@ class AutoscalingConfig:
 
     @property
     def runtime_hash(self) -> str:
-        if not hasattr(self, "_runtime_hash"):
-            self._calculate_hashes()
         return self._runtime_hash
 
     @property
     def file_mounts_contents_hash(self) -> str:
-        if not hasattr(self, "_file_mounts_contents_hash"):
-            self._calculate_hashes()
         return self._file_mounts_contents_hash
 
 

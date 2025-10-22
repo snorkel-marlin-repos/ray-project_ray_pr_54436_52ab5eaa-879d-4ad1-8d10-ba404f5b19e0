@@ -1,7 +1,7 @@
 import inspect
 import logging
 from inspect import Parameter
-from typing import Any, Dict, List, Tuple
+from typing import List
 
 from ray._private.inspect_util import is_cython
 
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 DUMMY_TYPE = b"__RAY_DUMMY__"
 
 
-def get_signature(func: Any) -> inspect.Signature:
+def get_signature(func):
     """Get signature parameters.
 
     Support Cython functions by grabbing relevant attributes from the Cython
@@ -55,7 +55,7 @@ def get_signature(func: Any) -> inspect.Signature:
     return inspect.signature(func)
 
 
-def extract_signature(func: Any, ignore_first: bool = False) -> List[Parameter]:
+def extract_signature(func, ignore_first=False):
     """Extract the function signature from the function.
 
     Args:
@@ -79,9 +79,7 @@ def extract_signature(func: Any, ignore_first: bool = False) -> List[Parameter]:
     return signature_parameters
 
 
-def validate_args(
-    signature_parameters: List[Parameter], args: Tuple[Any, ...], kwargs: Dict[str, Any]
-) -> None:
+def validate_args(signature_parameters: List[Parameter], args, kwargs):
     """Validates the arguments against the signature.
 
     Args:
@@ -101,9 +99,7 @@ def validate_args(
         raise TypeError(str(exc)) from None
 
 
-def flatten_args(
-    signature_parameters: List[Parameter], args: Tuple[Any, ...], kwargs: Dict[str, Any]
-) -> List[Any]:
+def flatten_args(signature_parameters: List[Parameter], args, kwargs):
     """Validates the arguments against the signature and flattens them.
 
     The flat list representation is a serializable format for arguments.
@@ -137,7 +133,7 @@ def flatten_args(
     return list_args
 
 
-def recover_args(flattened_args: List[Any]) -> Tuple[List[Any], Dict[str, Any]]:
+def recover_args(flattened_args):
     """Recreates `args` and `kwargs` from the flattened arg list.
 
     Args:
@@ -161,3 +157,29 @@ def recover_args(flattened_args: List[Any]) -> Tuple[List[Any], Dict[str, Any]]:
             kwargs[name] = arg
 
     return args, kwargs
+
+
+def _convert_from_parameter_kind(kind):
+    if kind == Parameter.POSITIONAL_ONLY:
+        return 0
+    if kind == Parameter.POSITIONAL_OR_KEYWORD:
+        return 1
+    if kind == Parameter.VAR_POSITIONAL:
+        return 2
+    if kind == Parameter.KEYWORD_ONLY:
+        return 3
+    if kind == Parameter.VAR_KEYWORD:
+        return 4
+
+
+def _convert_to_parameter_kind(value):
+    if value == 0:
+        return Parameter.POSITIONAL_ONLY
+    if value == 1:
+        return Parameter.POSITIONAL_OR_KEYWORD
+    if value == 2:
+        return Parameter.VAR_POSITIONAL
+    if value == 3:
+        return Parameter.KEYWORD_ONLY
+    if value == 4:
+        return Parameter.VAR_KEYWORD

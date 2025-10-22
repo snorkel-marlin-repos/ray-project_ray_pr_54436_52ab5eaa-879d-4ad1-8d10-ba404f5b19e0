@@ -50,6 +50,7 @@
 #include "ray/stats/metric_defs.h"
 #include "ray/util/cmd_line_utils.h"
 #include "ray/util/event.h"
+#include "ray/util/event_label.h"
 #include "ray/util/util.h"
 
 namespace {
@@ -382,6 +383,31 @@ ray::Status NodeManager::RegisterGcs() {
   return ray::Status::OK();
 }
 
+void NodeManager::KillWorker(std::shared_ptr<WorkerInterface> worker, bool force) {
+  if (force) {
+    worker->GetProcess().Kill();
+    return;
+  }
+#ifdef _WIN32
+// TODO(mehrdadn): implement graceful process termination mechanism
+#else
+  // If we're just cleaning up a single worker, allow it some time to clean
+  // up its state before force killing. The client socket will be closed
+  // and the worker struct will be freed after the timeout.
+  kill(worker->GetProcess().GetId(), SIGTERM);
+#endif
+
+  auto retry_timer = std::make_shared<boost::asio::deadline_timer>(io_service_);
+  auto retry_duration = boost::posix_time::milliseconds(
+      RayConfig::instance().kill_worker_timeout_milliseconds());
+  retry_timer->expires_from_now(retry_duration);
+  retry_timer->async_wait([retry_timer, worker](const boost::system::error_code &error) {
+    RAY_LOG(DEBUG) << "Send SIGKILL to worker, pid=" << worker->GetProcess().GetId();
+    // Force kill worker
+    worker->GetProcess().Kill();
+  });
+}
+
 void NodeManager::DestroyWorker(std::shared_ptr<WorkerInterface> worker,
                                 rpc::WorkerExitType disconnect_type,
                                 const std::string &disconnect_detail,
@@ -392,7 +418,7 @@ void NodeManager::DestroyWorker(std::shared_ptr<WorkerInterface> worker,
   DisconnectClient(
       worker->Connection(), /*graceful=*/false, disconnect_type, disconnect_detail);
   worker->MarkDead();
-  worker->KillAsync(io_service_, force);
+  KillWorker(worker, force);
   if (disconnect_type == rpc::WorkerExitType::SYSTEM_ERROR) {
     number_workers_killed_++;
   } else if (disconnect_type == rpc::WorkerExitType::NODE_OUT_OF_MEMORY) {
@@ -436,7 +462,7 @@ void NodeManager::HandleJobFinished(const JobID &job_id, const JobTableData &job
                   << "Failed to send exit request to worker "
                   << ": " << status.ToString() << ". Killing it using SIGKILL instead.";
               // Just kill-9 as a last resort.
-              worker->KillAsync(io_service_, /* force */ true);
+              KillWorker(worker, /* force */ true);
             }
           });
     }
@@ -446,7 +472,7 @@ void NodeManager::HandleJobFinished(const JobID &job_id, const JobTableData &job
 
 // TODO(edoakes): the connection management and logic to destroy a worker should live
 // inside of the WorkerPool. We also need to unify the destruction paths between
-// DestroyWorker, and DisconnectWorker.
+// DestroyWorker, DisconnectWorker, and KillWorker.
 void NodeManager::CheckForUnexpectedWorkerDisconnects() {
   std::vector<std::shared_ptr<ClientConnection>> all_connections;
   std::vector<std::shared_ptr<WorkerInterface>> all_workers =
@@ -844,7 +870,7 @@ void NodeManager::NodeRemoved(const NodeID &node_id) {
     // worker.
     RAY_LOG(INFO).WithField(worker->WorkerId()).WithField(owner_node_id)
         << "The leased worker is killed because the owner node died.";
-    worker->KillAsync(io_service_);
+    KillWorker(worker);
   }
 
   // Below, when we remove node_id from all of these data structures, we could
@@ -887,7 +913,7 @@ void NodeManager::HandleUnexpectedWorkerFailure(const WorkerID &worker_id) {
     RAY_LOG(INFO) << "The leased worker " << worker->WorkerId()
                   << " is killed because the owner process " << owner_worker_id
                   << " died.";
-    worker->KillAsync(io_service_);
+    KillWorker(worker);
   }
 }
 
@@ -1454,7 +1480,7 @@ void NodeManager::DisconnectClient(const std::shared_ptr<ClientConnection> &clie
                       << rpc::WorkerExitType_Name(disconnect_type)
                       << " Worker exit detail: " << disconnect_detail;
         std::string error_message_str = error_message.str();
-        RAY_EVENT(ERROR, "RAY_WORKER_FAILURE")
+        RAY_EVENT(ERROR, EL_RAY_WORKER_FAILURE)
                 .WithField("worker_id", worker->WorkerId().Hex())
                 .WithField("node_id", self_node_id_.Hex())
                 .WithField("job_id", worker->GetAssignedJobId().Hex())
@@ -1483,7 +1509,7 @@ void NodeManager::DisconnectClient(const std::shared_ptr<ClientConnection> &clie
     RAY_LOG(INFO).WithField(worker->WorkerId()).WithField(worker->GetAssignedJobId())
         << "Driver (pid=" << worker->GetProcess().GetId() << ") is disconnected.";
     if (disconnect_type == rpc::WorkerExitType::SYSTEM_ERROR) {
-      RAY_EVENT(ERROR, "RAY_DRIVER_FAILURE")
+      RAY_EVENT(ERROR, EL_RAY_DRIVER_FAILURE)
               .WithField("node_id", self_node_id_.Hex())
               .WithField("job_id", worker->GetAssignedJobId().Hex())
           << "Driver " << worker->WorkerId() << " died. Address: " << worker->IpAddress()
